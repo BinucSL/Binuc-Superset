@@ -22,11 +22,12 @@
 #
 import logging
 import os
-from datetime import timedelta
 from typing import Optional
 
-from cachelib.file import FileSystemCache
+from cachelib.redis import RedisCache
 from celery.schedules import crontab
+
+from customAuth import CustomSecurityManager
 
 logger = logging.getLogger()
 
@@ -66,23 +67,17 @@ REDIS_HOST = get_env_variable("REDIS_HOST")
 REDIS_PORT = get_env_variable("REDIS_PORT")
 REDIS_CELERY_DB = get_env_variable("REDIS_CELERY_DB", "0")
 REDIS_RESULTS_DB = get_env_variable("REDIS_RESULTS_DB", "1")
+REDIS_FILTERS_DB = get_env_variable("REDIS_FILTERS_DB", "2")
+REDIS_EXPLORE_DB = get_env_variable("REDIS_EXPLORE_DB", "3")
 
-RESULTS_BACKEND = FileSystemCache("/app/superset_home/sqllab")
-
-CACHE_CONFIG = {
-    "CACHE_TYPE": "redis",
-    "CACHE_DEFAULT_TIMEOUT": 300,
-    "CACHE_KEY_PREFIX": "superset_",
-    "CACHE_REDIS_HOST": REDIS_HOST,
-    "CACHE_REDIS_PORT": REDIS_PORT,
-    "CACHE_REDIS_DB": REDIS_RESULTS_DB,
-}
-DATA_CACHE_CONFIG = CACHE_CONFIG
+RESULTS_BACKEND = RedisCache(
+    host='localhost', port=6379, key_prefix='superset_results'
+)
 
 
 class CeleryConfig(object):
     BROKER_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_CELERY_DB}"
-    CELERY_IMPORTS = ("superset.sql_lab",)
+    CELERY_IMPORTS = ("superset.sql_lab", "superset.tasks")
     CELERY_RESULT_BACKEND = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_RESULTS_DB}"
     CELERYD_LOG_LEVEL = "DEBUG"
     CELERYD_PREFETCH_MULTIPLIER = 1
@@ -95,6 +90,15 @@ class CeleryConfig(object):
         "reports.prune_log": {
             "task": "reports.prune_log",
             "schedule": crontab(minute=10, hour=0),
+        },
+        'cache-warmup-hourly': {
+            'task': 'cache-warmup',
+            'schedule': crontab(minute=0, hour='*'),  # hourly
+            'kwargs': {
+                'strategy_name': 'top_n_dashboards',
+                'top_n': 5,
+                'since': '7 days ago',
+            },
         },
     }
 
@@ -109,6 +113,67 @@ WEBDRIVER_BASEURL_USER_FRIENDLY = WEBDRIVER_BASEURL
 
 SQLLAB_CTAS_NO_LIMIT = True
 
+# BINUC CUSTOM
+SUPERSET_LOAD_EXAMPLES = 0
+WEBDRIVER_BASEURL = get_env_variable('WEBDRIVER_BASEURL')
+SECRET_KEY = get_env_variable('SECRET_KEY')
+SESSION_COOKIE_SAMESITE = get_env_variable('SESSION_COOKIE_SAMESITE')
+SESSION_COOKIE_SECURE = get_env_variable('SESSION_COOKIE_SECURE')
+
+# The limit of queries fetched for query search
+QUERY_SEARCH_LIMIT = get_env_variable('QUERY_SEARCH_LIMIT')
+
+# Flask-WTF flag for CSRF
+WTF_CSRF_ENABLED = get_env_variable('WTF_CSRF_ENABLED')
+
+# Branding
+APP_NAME = get_env_variable('APP_NAME')
+# Specify the App icon
+APP_ICON = get_env_variable('APP_ICON')
+APP_ICON_WIDTH = get_env_variable('APP_ICON_WIDTH')
+# ---------------------------------------------------
+# Babel config for translations
+# ---------------------------------------------------
+# Setup default language
+BABEL_DEFAULT_LOCALE = get_env_variable('BABEL_DEFAULT_LOCALE')
+LANGUAGES = {
+    'en': {'flag': 'us', 'name': 'English'},
+    'es': {'flag': 'es', 'name': 'Spanish'},
+}
+# Custom Security manager
+JWT_SECRET = get_env_variable('JWT_SECRET')
+JWT_ALG = ['HS256']
+CUSTOM_SECURITY_MANAGER = CustomSecurityManager
+
+MAPBOX_API_KEY = get_env_variable('MAPBOX_API_KEY')
+
+DATA_CACHE_CONFIG = {
+    'CACHE_TYPE': 'RedisCache',
+    'CACHE_KEY_PREFIX': 'superset_results',
+    'CACHE_DEFAULT_TIMEOUT': 86400,  # 60 seconds * 60 minutes * 24 hours
+    'CACHE_REDIS_HOST': REDIS_HOST,
+    'CACHE_REDIS_PORT': REDIS_PORT,
+    'CACHE_REDIS_DB': REDIS_RESULTS_DB,
+    'CACHE_REDIS_URL': f'redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_RESULTS_DB}'
+}
+FILTER_STATE_CACHE_CONFIG = {
+    'CACHE_TYPE': 'RedisCache',
+    'CACHE_KEY_PREFIX': 'superset_filter_state',
+    'CACHE_DEFAULT_TIMEOUT': 86400,  # 60 seconds * 60 minutes * 24 hours
+    'CACHE_REDIS_HOST': REDIS_HOST,
+    'CACHE_REDIS_PORT': REDIS_PORT,
+    'CACHE_REDIS_DB': REDIS_FILTERS_DB,
+    'CACHE_REDIS_URL': f'redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_FILTERS_DB}'
+}
+EXPLORE_FORM_DATA_CACHE_CONFIG = {
+    'CACHE_TYPE': 'RedisCache',
+    'CACHE_KEY_PREFIX': 'superset_explore_form',
+    'CACHE_DEFAULT_TIMEOUT': 86400,  # 60 seconds * 60 minutes * 24 hours
+    'CACHE_REDIS_HOST': REDIS_HOST,
+    'CACHE_REDIS_PORT': REDIS_PORT,
+    'CACHE_REDIS_DB': REDIS_EXPLORE_DB,
+    'CACHE_REDIS_URL': f'redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_EXPLORE_DB}'
+}
 #
 # Optionally import superset_config_docker.py (which will have been included on
 # the PYTHONPATH) in order to allow for local settings to be overridden
